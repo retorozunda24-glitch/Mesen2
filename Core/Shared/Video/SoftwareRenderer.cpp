@@ -4,6 +4,53 @@
 #include "Shared/RenderedFrame.h"
 #include "Shared/Emulator.h"
 #include "Shared/NotificationManager.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <vector>
+
+// AOF2 experimental presentation-only zoom for Mesen 2's software renderer.
+// Opt in with MESEN_AOF2_ZOOM=1.25 (1.0 disables zoom).
+// Gameplay simulation, sprite/VRAM data, and emulated HUD remain untouched.
+// NOTE: The protected bands are provisional, not verified AOF2 pixel bounds.
+static double GetAof2Zoom()
+{
+	const char* value = std::getenv("MESEN_AOF2_ZOOM");
+	if(!value || !*value) { return 1.0; }
+	char* end = nullptr;
+	double zoom = std::strtod(value, &end);
+	if(end == value || *end != '\0' || !std::isfinite(zoom)) { return 1.0; }
+	return std::max(1.0, std::min(zoom, 1.6));
+}
+
+static void ZoomAof2Frame(uint32_t* dst, const uint32_t* src, uint32_t width, uint32_t height, double zoom)
+{
+	if(zoom <= 1.0 || width == 0 || height <= 2) {
+		std::copy(src, src + size_t(width) * height, dst);
+		return;
+	}
+
+	// Keep the top HUD band (health, timer, etc.) unscaled.
+	// Preserve the bottom strip too. Both are adjustable after game validation.
+	const uint32_t top = std::min<uint32_t>(40, height / 4);
+	const uint32_t bottom = std::min<uint32_t>(24, height / 4);
+	const uint32_t playHeight = height - top - bottom;
+	std::copy(src, src + size_t(width) * height, dst);
+
+	const double centerX = (double(width) - 1.0) / 2.0;
+	const double centerY = double(top) + (double(playHeight) - 1.0) / 2.0;
+	for(uint32_t y = top; y < height - bottom; ++y) {
+		const double sy = centerY + (double(y) - centerY) / zoom;
+		const uint32_t sourceY = std::min(height - bottom - 1,
+			std::max(top, uint32_t(std::floor(sy + 0.5))));
+		for(uint32_t x = 0; x < width; ++x) {
+			const double sx = centerX + (double(x) - centerX) / zoom;
+			const uint32_t sourceX = std::min(width - 1,
+				uint32_t(std::max(0.0, std::floor(sx + 0.5))));
+			dst[size_t(y) * width + x] = src[size_t(sourceY) * width + sourceX];
+		}
+	}
+}
 
 SoftwareRenderer::SoftwareRenderer(Emulator* emu)
 {
@@ -41,7 +88,12 @@ void SoftwareRenderer::UpdateFrame(RenderedFrame& frame)
 	}
 
 	auto lock = _textureLock.AcquireSafe();
-	memcpy(_textureBuffer[0], frame.FrameBuffer, frame.Width * frame.Height * sizeof(uint32_t));
+	const double zoom = GetAof2Zoom();
+	if(zoom > 1.0) {
+		ZoomAof2Frame(_textureBuffer[0], frame.FrameBuffer, frame.Width, frame.Height, zoom);
+	} else {
+		memcpy(_textureBuffer[0], frame.FrameBuffer, frame.Width * frame.Height * sizeof(uint32_t));
+	}
 	_needSwap = true;
 }
 
