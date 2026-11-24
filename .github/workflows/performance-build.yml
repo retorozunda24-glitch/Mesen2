@@ -10,19 +10,20 @@ jobs:
   windows:
     runs-on: windows-2022
 
-    defaults:
-      run:
-        working-directory: Mesen2-master
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Extract source
-        working-directory: .
         shell: pwsh
         run: |
-          Expand-Archive -Path "Mesen_SFC_Performance_up01_source.zip" -DestinationPath "." -Force
+          $zip = Join-Path $env:GITHUB_WORKSPACE "Mesen_SFC_Performance_up01_source.zip"
+          $dest = Join-Path $env:GITHUB_WORKSPACE "performance-source"
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
+          $sln = Get-ChildItem $dest -Filter Mesen.sln -Recurse | Select-Object -First 1
+          if (-not $sln) { throw "Mesen.sln not found" }
+          "SOURCE_DIR=$($sln.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Source: $($sln.Directory.FullName)"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -37,20 +38,30 @@ jobs:
       - name: Build version
         shell: pwsh
         run: |
+          Set-Location $env:SOURCE_DIR
           Set-Content -Path "UI/Dependencies/Internal/BuildSha.txt" -Value "Performance-up01"
 
       - name: Restore
-        run: dotnet restore -p:TargetFramework=net8.0 -r win-x64 -p:PublishAot=false -p:BuildWithNetFrameworkHostedCompiler=true
+        shell: pwsh
+        run: |
+          Set-Location $env:SOURCE_DIR
+          dotnet restore -p:TargetFramework=net8.0 -r win-x64 -p:PublishAot=false -p:SelfContained=true -p:BuildWithNetFrameworkHostedCompiler=true
 
       - name: Build
-        run: msbuild -nologo -m -p:Configuration=Release -p:Platform=x64 -t:Clean,UI -p:TargetFramework=net8.0
+        shell: pwsh
+        run: |
+          Set-Location $env:SOURCE_DIR
+          msbuild -nologo -m -p:Configuration=Release -p:Platform=x64 -t:Clean,UI -p:TargetFramework=net8.0
 
       - name: Publish
-        run: dotnet publish --no-restore -c Release -p:PublishAot=false -p:SelfContained=true -p:PublishSingleFile=true -p:OptimizeUi=true -p:Platform="Any CPU" -p:TargetFramework=net8.0 -r win-x64 Mesen.sln /p:PublishProfile=UI\Properties\PublishProfiles\Release.pubxml
+        shell: pwsh
+        run: |
+          Set-Location $env:SOURCE_DIR
+          dotnet publish --no-restore -c Release -p:PublishAot=false -p:SelfContained=true -p:PublishSingleFile=true -p:OptimizeUi=true -p:Platform="Any CPU" -p:TargetFramework=net8.0 -r win-x64 Mesen.sln /p:PublishProfile=UI\Properties\PublishProfiles\Release.pubxml
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: Mesen-SFC-Performance-up01
-          path: Mesen2-master/build/TmpReleaseBuild/Mesen.exe
+          path: ${{ env.SOURCE_DIR }}/build/TmpReleaseBuild/Mesen.exe
           if-no-files-found: error
