@@ -17,7 +17,7 @@ jobs:
       - name: Extract source
         shell: pwsh
         run: |
-          $zip = Join-Path $env:GITHUB_WORKSPACE "Mesen_SFC_Performance_up01_source.zip"
+          $zip = Join-Path $env:GITHUB_WORKSPACE "Mesen_SFC_Performance_up02_source.zip"
           $dest = Join-Path $env:GITHUB_WORKSPACE "performance-source"
           Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
           $sln = Get-ChildItem $dest -Filter Mesen.sln -Recurse | Select-Object -First 1
@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:SOURCE_DIR
-          Set-Content -Path "UI/Dependencies/Internal/BuildSha.txt" -Value "Performance-up01"
+          Set-Content -Path "UI/Dependencies/Internal/BuildSha.txt" -Value "Performance-up02"
 
       - name: Restore
         shell: pwsh
@@ -62,6 +62,6 @@ jobs:
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Mesen-SFC-Performance-up01
+          name: Mesen-SFC-Performance-up02
           path: ${{ env.SOURCE_DIR }}/build/TmpReleaseBuild/Mesen.exe
           if-no-files-found: error
